@@ -24,6 +24,6 @@ work_dir: "{{ cluster_dir }}/output"
 # a shared var, so each cluster gets its own keypair in its credentials dir.
 pull_secret_path: "{{ lookup('env', 'PULL_SECRET_PATH') | default('~/.openshift/pull-secret.json', true) }}"
 
-openshift_version: "4.17"
+openshift_version: "4.20"
 base_domain: example.com
 namespace_prefix: nested-ocp
