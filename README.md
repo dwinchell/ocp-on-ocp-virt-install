@@ -1,4 +1,4 @@
-# OpenShift-on-OpenShift Virt provisioning
+# OpenShift-on-OpenShift Virt Provisioning
 
 Three roles, one playbook, per-cluster vars in `group_vars/<cluster_name>.yml`.
 
