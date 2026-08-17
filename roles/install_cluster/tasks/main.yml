@@ -1,0 +1,86 @@
+---
+- name: Start VMs (they boot from the agent ISO, bootOrder 1)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ management_kubeconfig }}"
+    state: patched
+    api_version: kubevirt.io/v1
+    kind: VirtualMachine
+    namespace: "{{ namespace }}"
+    name: "{{ cluster_name }}-{{ node.name }}"
+    definition:
+      spec:
+        running: true
+  loop: "{{ nodes }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"
+
+# These block until the corresponding stage finishes; expect this task to
+# run for tens of minutes. openshift-install exits non-zero on failure,
+# which will fail the play — check {{ work_dir }}/.openshift_install.log.
+- name: Wait for bootstrap to complete
+  ansible.builtin.command:
+    cmd: openshift-install agent wait-for bootstrap-complete --dir {{ work_dir }} --log-level=info
+  changed_when: false
+
+- name: Wait for install to complete
+  ansible.builtin.command:
+    cmd: openshift-install agent wait-for install-complete --dir {{ work_dir }} --log-level=info
+  changed_when: false
+
+# openshift-install already writes kubeconfig + kubeadmin-password to
+# {{ work_dir }}/auth/ on its own — nothing to do for that. We additionally
+# copy the kubeconfig into credentials/ so every cluster's creds live in one
+# place, and copy the SSH keypair into output/auth/ so it sits alongside
+# the kubeconfig there too.
+- name: Copy kubeconfig into credentials directory
+  ansible.builtin.copy:
+    src: "{{ work_dir }}/auth/kubeconfig"
+    dest: "{{ credentials_dir }}/kubeconfig"
+    mode: "0600"
+    remote_src: true
+
+- name: Copy SSH keypair into output/auth alongside the kubeconfig
+  ansible.builtin.copy:
+    src: "{{ credentials_dir }}/{{ item }}"
+    dest: "{{ work_dir }}/auth/{{ item }}"
+    mode: "{{ '0600' if item == 'id_rsa' else '0644' }}"
+    remote_src: true
+  loop:
+    - id_rsa
+    - id_rsa.pub
+
+- name: Demote agent ISO below the OS disk in boot order (prevents re-boot into installer)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ management_kubeconfig }}"
+    state: patched
+    api_version: kubevirt.io/v1
+    kind: VirtualMachine
+    namespace: "{{ namespace }}"
+    name: "{{ cluster_name }}-{{ node.name }}"
+    definition:
+      spec:
+        template:
+          spec:
+            domain:
+              devices:
+                disks:
+                  - name: boot
+                    disk:
+                      bus: virtio
+                    bootOrder: 1
+                  - name: agentiso
+                    cdrom:
+                      bus: sata
+                    bootOrder: 2
+  loop: "{{ nodes }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"
+
+- name: Report output locations
+  ansible.builtin.debug:
+    msg:
+      - "Cluster {{ cluster_name }} installed."
+      - "Kubeconfig: {{ credentials_dir }}/kubeconfig (also at {{ work_dir }}/auth/kubeconfig)"
+      - "SSH: ssh -i {{ credentials_dir }}/id_rsa core@<node-ip>"

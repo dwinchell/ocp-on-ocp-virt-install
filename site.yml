@@ -1,0 +1,33 @@
+---
+# Provision VMs, generate + attach the agent-based install ISO, and install
+# OpenShift on a single nested cluster.
+#
+# Usage:
+#   ansible-playbook site.yml -e cluster_name=dev
+#
+# Run a single phase with tags, e.g. just re-provision VMs:
+#   ansible-playbook site.yml -e cluster_name=dev --tags vms
+#
+# cluster_name must match a group_vars/<cluster_name>.yml file.
+- name: Provision and install a nested OpenShift-on-Virt cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  pre_tasks:
+    - name: Require cluster_name
+      ansible.builtin.assert:
+        that: cluster_name is defined
+        fail_msg: "Pass -e cluster_name=<name> matching a group_vars/<name>.yml file"
+
+  vars_files:
+    - group_vars/all.yml
+    - "group_vars/{{ cluster_name }}.yml"
+
+  roles:
+    - role: provision_vms
+      tags: [vms, provision]
+    - role: generate_agent_iso
+      tags: [iso]
+    - role: install_cluster
+      tags: [install]

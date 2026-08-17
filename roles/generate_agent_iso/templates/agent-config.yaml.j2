@@ -1,0 +1,35 @@
+apiVersion: v1alpha1
+metadata:
+  name: {{ cluster_name }}
+# rendezvousIP: the host the other nodes phone home to during bootstrap.
+# Using the first master here; any host in the list works.
+rendezvousIP: {{ nodes[0].ip }}
+hosts:
+{% for node in nodes %}
+  - hostname: {{ node.name }}
+    role: {{ node.role }}
+    interfaces:
+      - name: enp1s0
+        macAddress: {{ node.mac }}
+    networkConfig:
+      interfaces:
+        - name: enp1s0
+          type: ethernet
+          state: up
+          mac-address: {{ node.mac }}
+          ipv4:
+            enabled: true
+            dhcp: false
+            address:
+              - ip: {{ node.ip }}
+                prefix-length: 24
+      dns-resolver:
+        config:
+          server:
+            - {{ network_dns }}
+      routes:
+        config:
+          - destination: 0.0.0.0/0
+            next-hop-address: {{ network_gateway }}
+            next-hop-interface: enp1s0
+{% endfor %}

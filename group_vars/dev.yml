@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Per-cluster vars for "dev". Copy this file to create a new cluster
+# (e.g. group_vars/test.yml) and adjust node count / sizing / network.
+# ---------------------------------------------------------------------------
+cluster_name: dev
+
+vm_cpu_cores: 8
+vm_memory: 32Gi
+vm_disk_size: 120Gi
+
+network_cidr: 10.10.1.0/24
+network_gateway: 10.10.1.1
+network_dns: 10.10.1.1
+network_attachment: br-nested   # name of the Multus NetworkAttachmentDefinition
+
+api_vip: 10.10.1.10
+ingress_vip: 10.10.1.11
+
+# Storage class backing each node's boot/etcd disk.
+#   etcd_storage_class:    pre-provisioned local storage (LVM), used for
+#                          control-plane nodes only. Must be RWO and is
+#                          expected to be WaitForFirstConsumer so the PV
+#                          binds on whatever node the VM is scheduled to —
+#                          which is why control-plane VMs below are pinned
+#                          via control_plane_number.
+#   default_storage_class: normal (e.g. Ceph/ODF) RWX-capable class used
+#                          for any node without a control_plane_number set.
+etcd_storage_class: lvm-local-storage
+default_storage_class: ocs-storagecluster-ceph-rbd
+
+# One entry per nested-cluster node. mac/ip must be unique and routable on
+# network_attachment. 3 masters is the minimum compact/HA topology; add
+# role: worker entries for a standard (non-compact) cluster.
+#
+# control_plane_number pins a master to the bare metal node manually
+# labeled `virt_control_plane_number=<N>`, e.g.:
+#   oc label node <bare-metal-node-1> virt_control_plane_number=1
+# This keeps the VM (and therefore its etcd disk) on the same node as the
+# local storage that backs it. Omit control_plane_number for worker nodes —
+# they use default_storage_class and aren't pinned.
+nodes:
+  - name: master-0
+    role: master
+    mac: "02:00:00:00:01:00"
+    ip: "10.10.1.20"
+    control_plane_number: 1
+  - name: master-1
+    role: master
+    mac: "02:00:00:00:01:01"
+    ip: "10.10.1.21"
+    control_plane_number: 2
+  - name: master-2
+    role: master
+    mac: "02:00:00:00:01:02"
+    ip: "10.10.1.22"
+    control_plane_number: 3

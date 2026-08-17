@@ -1,0 +1,29 @@
+# ---------------------------------------------------------------------------
+# Shared across every nested cluster
+# ---------------------------------------------------------------------------
+
+# Kubeconfig for the MANAGEMENT (hub) cluster — the one running OpenShift
+# Virt that we provision VMs against. Defaults to $KUBECONFIG / ~/.kube/config.
+management_kubeconfig: "{{ lookup('env', 'KUBECONFIG') | default('~/.kube/config', true) }}"
+
+# Base directory for all per-cluster output. Layout per cluster:
+#   <openshift_clusters_dir>/<cluster_name>/
+#     credentials/        generated SSH keypair (id_rsa / id_rsa.pub) +
+#                          a copy of kubeconfig
+#     output/              openshift-install work dir: install-config.yaml,
+#                          agent-config.yaml, agent.x86_64.iso
+#     output/auth/          openshift-install's own kubeconfig +
+#                          kubeadmin-password, plus a copy of the SSH keypair
+openshift_clusters_dir: /root/openshift/clusters
+cluster_dir: "{{ openshift_clusters_dir }}/{{ cluster_name }}"
+credentials_dir: "{{ cluster_dir }}/credentials"
+work_dir: "{{ cluster_dir }}/output"
+
+# Pull secret used in every install-config.yaml. The SSH key is generated
+# per-cluster instead (see generate_agent_iso role) rather than pulled from
+# a shared var, so each cluster gets its own keypair in its credentials dir.
+pull_secret_path: "{{ lookup('env', 'PULL_SECRET_PATH') | default('~/.openshift/pull-secret.json', true) }}"
+
+openshift_version: "4.17"
+base_domain: example.com
+namespace_prefix: nested-ocp

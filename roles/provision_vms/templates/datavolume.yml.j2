@@ -1,0 +1,25 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: "{{ cluster_name }}-{{ node.name }}-boot"
+  namespace: "{{ namespace }}"
+spec:
+  source:
+    blank: {}
+  storage:
+{% if node.control_plane_number is defined %}
+    # Local (LVM) storage backing etcd — RWO only, and its storage class is
+    # typically WaitForFirstConsumer so the PV binds on whichever node the
+    # VM actually lands on. That's why the VM's nodeSelector above matters:
+    # it must match the node this storage class provisions volumes on.
+    storageClassName: "{{ etcd_storage_class }}"
+    accessModes:
+      - ReadWriteOnce
+{% else %}
+    storageClassName: "{{ default_storage_class }}"
+    accessModes:
+      - ReadWriteMany
+{% endif %}
+    resources:
+      requests:
+        storage: "{{ vm_disk_size }}"

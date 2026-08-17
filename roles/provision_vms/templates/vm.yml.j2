@@ -1,0 +1,61 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: "{{ cluster_name }}-{{ node.name }}"
+  namespace: "{{ namespace }}"
+  labels:
+    cluster: "{{ cluster_name }}"
+    role: "{{ node.role }}"
+spec:
+  running: false
+  template:
+    metadata:
+      labels:
+        cluster: "{{ cluster_name }}"
+        role: "{{ node.role }}"
+        vm.kubevirt.io/name: "{{ cluster_name }}-{{ node.name }}"
+    spec:
+      domain:
+        cpu:
+          cores: {{ vm_cpu_cores }}
+        resources:
+          requests:
+            memory: "{{ vm_memory }}"
+        devices:
+          disks:
+            # bootOrder 1: agent ISO. Boots first while it's the only
+            # populated volume; install_cluster demotes this after install.
+            - name: agentiso
+              cdrom:
+                bus: sata
+              bootOrder: 1
+            - name: boot
+              disk:
+                bus: virtio
+              bootOrder: 2
+          interfaces:
+            - name: nested
+              macAddress: "{{ node.mac }}"
+              bridge: {}
+{% if node.control_plane_number is defined %}
+      # Pin this control-plane VM to the bare metal node manually labeled
+      # virt_control_plane_number={{ node.control_plane_number }}. Required
+      # so the VM lands on the same node as the pre-provisioned local (LVM)
+      # PV its etcd/boot disk will bind to — local storage can't migrate.
+      nodeSelector:
+        virt_control_plane_number: "{{ node.control_plane_number | string }}"
+{% endif %}
+      networks:
+        - name: nested
+          multus:
+            networkName: "{{ network_attachment }}"
+      volumes:
+        - name: boot
+          dataVolume:
+            name: "{{ cluster_name }}-{{ node.name }}-boot"
+        - name: agentiso
+          dataVolume:
+            # Created later by the generate_agent_iso role. The VM stays
+            # stopped until install_cluster starts it, by which point this
+            # DataVolume exists.
+            name: "{{ cluster_name }}-agent-iso"

@@ -1,0 +1,70 @@
+---
+- name: Ensure namespace exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ management_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ namespace }}"
+
+- name: Look up bare metal nodes labeled for control-plane pinning
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ management_kubeconfig }}"
+    api_version: v1
+    kind: Node
+    label_selectors:
+      - "virt_control_plane_number={{ node.control_plane_number }}"
+  register: cp_node_lookup
+  loop: "{{ nodes | selectattr('control_plane_number', 'defined') | list }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"
+
+- name: Fail early if a control_plane_number has no matching labeled node
+  ansible.builtin.assert:
+    that: item.resources | length > 0
+    fail_msg: >-
+      No node found labeled virt_control_plane_number={{ item.node.control_plane_number }}
+      (needed for {{ item.node.name }}). Label it with:
+      oc label node <bare-metal-node> virt_control_plane_number={{ item.node.control_plane_number }}
+  loop: "{{ cp_node_lookup.results }}"
+  loop_control:
+    label: "{{ item.node.name }}"
+
+- name: Create blank boot DataVolume for each node
+  kubernetes.core.k8s:
+    kubeconfig: "{{ management_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'datavolume.yml.j2') }}"
+  loop: "{{ nodes }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"
+
+- name: Create VirtualMachine for each node (stopped — no boot media attached yet)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ management_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'vm.yml.j2') }}"
+  loop: "{{ nodes }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"
+
+- name: Wait for boot DataVolumes to finish provisioning
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ management_kubeconfig }}"
+    api_version: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    namespace: "{{ namespace }}"
+    name: "{{ cluster_name }}-{{ node.name }}-boot"
+  register: dv_status
+  until: dv_status.resources[0].status.phase == "Succeeded"
+  retries: 30
+  delay: 10
+  loop: "{{ nodes }}"
+  loop_control:
+    loop_var: node
+    label: "{{ node.name }}"

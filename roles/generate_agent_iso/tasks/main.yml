@@ -1,0 +1,60 @@
+---
+- name: Ensure working directory exists
+  ansible.builtin.file:
+    path: "{{ work_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Ensure credentials directory exists
+  ansible.builtin.file:
+    path: "{{ credentials_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Generate cluster SSH keypair (private key stays in credentials/; public key goes into install-config.yaml)
+  community.crypto.openssh_keypair:
+    path: "{{ credentials_dir }}/id_rsa"
+    type: rsa
+    size: 4096
+    comment: "{{ cluster_name }}-cluster-access"
+    mode: "0600"
+
+- name: Render install-config.yaml
+  ansible.builtin.template:
+    src: install-config.yaml.j2
+    dest: "{{ work_dir }}/install-config.yaml"
+    mode: "0600"
+
+- name: Render agent-config.yaml
+  ansible.builtin.template:
+    src: agent-config.yaml.j2
+    dest: "{{ work_dir }}/agent-config.yaml"
+    mode: "0600"
+
+# openshift-install consumes/deletes install-config.yaml + agent-config.yaml
+# from work_dir as it builds the ISO, so re-runs re-render them above.
+- name: Generate agent ISO
+  ansible.builtin.command:
+    cmd: openshift-install agent create image --dir {{ work_dir }} --log-level=info
+  args:
+    creates: "{{ work_dir }}/agent.x86_64.iso"
+
+- name: Check whether the agent-iso DataVolume already exists in-cluster
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ management_kubeconfig }}"
+    api_version: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    namespace: "{{ namespace }}"
+    name: "{{ cluster_name }}-agent-iso"
+  register: existing_iso_dv
+
+- name: Upload agent ISO into the cluster as a DataVolume
+  ansible.builtin.command:
+    cmd: >
+      virtctl image-upload dv {{ cluster_name }}-agent-iso
+      --namespace {{ namespace }}
+      --size=1Gi
+      --image-path={{ work_dir }}/agent.x86_64.iso
+      --kubeconfig {{ management_kubeconfig }}
+      --insecure
+  when: existing_iso_dv.resources | length == 0

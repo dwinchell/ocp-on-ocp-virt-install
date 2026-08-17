@@ -1,0 +1,2 @@
+namespace: "{{ namespace_prefix }}-{{ cluster_name }}"
+# cluster_dir / credentials_dir / work_dir come from group_vars/all.yml
